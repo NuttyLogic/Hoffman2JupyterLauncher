@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+
+import subprocess
+import webbrowser
+import time
+import argparse
+
+parser = argparse.ArgumentParser(description='Script to launch remote jupyter instances on hoffman2')
+
+parser.add_argument('-u', type=str, default='sge user', help='hoffman2 username')
+parser.add_argument('-t', type=int, default=8, help='time in hours, default = 4 ')
+parser.add_argument('-m', type=int, default=8, help='memory in GB per slot, default = 4')
+parser.add_argument('-s', type=int, default=2, help='slots (cores), default = 2 ')
+parser.add_argument('-p', type=int, default=8790, help='Port to output dictionary, default = 8790, '
+                                                       'if port is unavailable script will fail')
+parser.add_argument('-d', type=str, default='$HOME', help='hoffman2 directory to initialize jupyter ')
+parser.add_argument('-c', type=str, default='hoffman2.idre.ucla.edu', help='path to SGE cluster')
+parser.add_argument('-M', type=str, default=['python/3.6.1'], action='append',
+                    help='-M for each module you want to load')
+
+
+class JupyterInstance:
+    """Wrapper to automate launching and tunneling to establish a remote jupyter notebook instance.
+    Arguments:
+        username (str): sge username
+        time (int): sge run time, connection will be maintained for the duration of the runtime (hours)
+        memory (int): sge virtual memory
+        slots (int): sge number of cores
+        port (int): port to forward, if port is in use script will fail
+        directory (str): directory to initialize jupyter notebook
+        sge_modules (list): list of modules to load before initializing jupyter notebook
+        cluster_address (str): sge cluster address
+    Attributes:
+        self.run: run functions to open and maintain a jupyter instance
+        self.open_connection: opens ssh connection to sge cluster
+        self.check_user: confirms user
+        self.request_resources: requests computing node
+        self.load_modules: loads input modules
+        self.get_hostname: retrieve computing node name
+        self.set_directory: changes directory to initialize jupyter notebook
+        self.launch_jupyter: launches a jupyter instance
+        self.ssh_tunnel: tunnels from computing node to local port
+        self.open_browser: opens browser
+        self.maintain_connection: keeps script open over run time
+        self.read_to_key: reads output lines from stdout and break when function returns true
+        self.get_host: line parsing definition to return True when host id given
+        self.confirm_user: line parsing definition to return True when username given
+        """
+
+    def __init__(self, username=None, time=None, memory=None,
+                 slots=None, port=None, directory=None,
+                 sge_modules=None, cluster_address=None):
+        assert(isinstance(sge_modules, list))
+        self.username = username
+        self.time = time
+        self.memory = memory
+        self.slots = slots
+        self.port = port
+        self.directory = directory
+        self.sge_modules = sge_modules
+        self.cluster_address = cluster_address
+        self.ssh_connection = None
+        self.hostname = None
+        self.ptunnel = None
+
+    def run(self):
+        self.open_connection()
+        self.check_user()
+        self.request_resources()
+        self.get_hostname()
+        self.load_modules()
+        self.set_directory()
+        self.launch_jupyter()
+        self.ssh_tunnel()
+        self.open_browser()
+        self.maintain_connection()
+
+    def open_connection(self):
+        self.ssh_connection = subprocess.Popen(
+            ['ssh', '-t', '-t', '-4', '%s@%s' % (self.username, self.cluster_address)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True)
+        self.read_to_key(self.ssh_connection.stdout, lambda line: line.split(' ')[0] == 'Welcome')
+        print('Successfully opened connection')
+
+    def check_user(self):
+        print('Checking Connection')
+        self.ssh_connection.stdin.write('echo $USER\n')
+        self.ssh_connection.stdin.flush()
+        self.read_to_key(self.ssh_connection.stdout, self.confirm_user)
+
+    def request_resources(self):
+        print('Requesting Resources')
+        qrsh_string = "qrsh -l i,h_rt=%s:00:00,h_data=%sg -pe shared %s\n" % (self.time, self.memory, self.slots)
+        self.ssh_connection.stdin.write(qrsh_string)
+        self.ssh_connection.stdin.flush()
+
+    def load_modules(self):
+        print('Loading Modules')
+        for module in self.sge_modules:
+            module_load = "module load %s\n" % module
+            self.ssh_connection.stdin.write(module_load)
+            self.ssh_connection.stdin.flush()
+
+    def get_hostname(self):
+        print('Retrieving host information')
+        self.ssh_connection.stdin.write('echo hostname $HOSTNAME\n')
+        self.ssh_connection.stdin.flush()
+        self.read_to_key(self.ssh_connection.stdout, self.get_host)
+        print(self.hostname)
+
+    def set_directory(self):
+        self.ssh_connection.stdin.write('cd %s\n' % self.directory)
+        self.ssh_connection.stdin.flush()
+
+    def launch_jupyter(self):
+        self.ssh_connection.stdin.write('jupyter notebook --port=%s --no-browser\n' % self.port)
+        self.ssh_connection.stdin.flush()
+        self.read_to_key(self.ssh_connection.stdout, lambda line: 'NotebookApp' in line)
+
+    def ssh_tunnel(self):
+        tunnel = ['ssh', '-4', '-t', '-Y', '%s@%s' % (self.username, self.cluster_address), '-L',
+                  '%s:localhost:%s' % (self.port, self.port), 'ssh', '-t', '-Y',
+                  self.hostname, '-L', '%s:localhost:%s' % (self.port, self.port)]
+        print(' '.join(tunnel))
+        self.ptunnel = subprocess.Popen(tunnel, stdout=subprocess.PIPE, stdin=subprocess.PIPE, universal_newlines=True)
+        print('Opened SSH Tunnel')
+
+    def open_browser(self):
+        webbrowser.open('http://localhost:%s' % self.port)
+
+    def maintain_connection(self):
+        start = time.time()
+        message = False
+        while True:
+            if not message:
+                if time.time() - start > 60:
+                    print('Maintaining Connection for %s hours' % str(round(self.time)))
+                    break
+        time.sleep(self.time * 3600)
+        self.ssh_connection.kill()
+        self.ptunnel.kill()
+
+    @staticmethod
+    def read_to_key(stream, func):
+        while True:
+            line = stream.readline()
+            print(line)
+            if line:
+                if func(line):
+                    break
+
+    def get_host(self, line):
+        if line.split(' ')[0] == 'hostname':
+            self.hostname = line.replace('\n', '').split(' ')[1]
+            return True
+
+    def confirm_user(self, line):
+        if line.replace('\n', '') == self.username:
+            return True
+
+
+if __name__ == '__main__':
+
+    arguments = parser.parse_args()
+    jupyter = JupyterInstance(username=arguments.u,
+                              cluster_address=arguments.c,
+                              sge_modules=arguments.M,
+                              time=arguments.t,
+                              memory=arguments.m,
+                              slots=arguments.s,
+                              port=arguments.p,
+                              directory=arguments.d)
+    jupyter.run()
