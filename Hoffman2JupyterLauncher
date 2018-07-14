@@ -126,6 +126,7 @@ class JupyterInstance:
                   self.hostname, '-L', '%s:localhost:%s' % (self.port, self.port)]
         print(' '.join(tunnel))
         self.ptunnel = subprocess.Popen(tunnel, stdout=subprocess.PIPE, stdin=subprocess.PIPE, universal_newlines=True)
+        time.sleep(30)
         print('Opened SSH Tunnel')
 
     def open_browser(self):
