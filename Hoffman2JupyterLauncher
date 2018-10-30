@@ -50,7 +50,7 @@ class JupyterInstance:
     def __init__(self, username=None, time=None, memory=None,
                  slots=None, port=None, directory=None,
                  sge_modules=None, cluster_address=None):
-        assert(isinstance(sge_modules, list))
+        assert (isinstance(sge_modules, list))
         self.username = username
         self.time = time
         self.memory = memory
@@ -82,7 +82,7 @@ class JupyterInstance:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True)
-        self.read_to_key(self.ssh_connection.stdout, lambda line: line.split(' ')[0] == 'Welcome')
+        self.read_to_key(self.ssh_connection.stdout, lambda line: line.split(' ')[0] == 'Welcome' or line.split(' ')[0] == 'Last')
         print('Successfully opened connection')
 
     def check_user(self):
@@ -164,7 +164,6 @@ class JupyterInstance:
 
 
 if __name__ == '__main__':
-
     arguments = parser.parse_args()
     jupyter = JupyterInstance(username=arguments.u,
                               cluster_address=arguments.c,
