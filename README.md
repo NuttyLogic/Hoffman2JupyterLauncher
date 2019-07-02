@@ -1,9 +1,10 @@
 # Hoffman2JupyterLauncher
-[Hoffman2JupyterLauncher.py](https://github.com/NuttyLogic/Hoffman2JupyterLauncher) automates launching a remote jupyter notebook instance on the UCLA Hoffman2 cluster and forwarding the jupyter notebook port to your local machine. 
+[Hoffman2JupyterLauncher.py](https://github.com/NuttyLogic/Hoffman2JupyterLauncher) automates launching a remote jupyter 
+lab instance on the UCLA Hoffman2 cluster and forwarding the jupyter notebook port to your local machine. 
 This script is a refactored version a [script](https://gitlab.idre.ucla.edu/dauria/jupyter-notebook) 
-provided by the UCLA [IDRE](https://idre.ucla.edu/). This script will fail if the port forwarded is in use. 
+provided by the UCLA [IDRE](https://idre.ucla.edu/). This script will fail if the forwarded port is in use. 
 
-```bash
+```shell
 usage: python3 Hoffman2JupyterLauncher -u sge_username -t time_in_hours -m memory_in_GB 
                                 -s cores -p port -d jupyter_directory
                                -c cluster_address -M module1 -M module2 ...
