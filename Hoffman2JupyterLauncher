@@ -15,7 +15,7 @@ parser.add_argument('-p', type=int, default=8790, help='Port to output dictionar
                                                        'if port is unavailable script will fail')
 parser.add_argument('-d', type=str, default='$HOME', help='hoffman2 directory to initialize jupyter ')
 parser.add_argument('-c', type=str, default='hoffman2.idre.ucla.edu', help='path to SGE cluster')
-parser.add_argument('-M', type=str, default=['python/3.6.1'], action='append',
+parser.add_argument('-M', type=str, default=['python/3.7.2'], action='append',
                     help='-M for each module you want to load')
 
 
@@ -23,7 +23,7 @@ class JupyterInstance:
     """Wrapper to automate launching and tunneling to establish a remote jupyter notebook instance.
     Arguments:
         username (str): sge username
-        time (int): sge run time, connection will be maintained for the duration of the runtime (hours)
+        cluster_time (int): sge run time, connection will be maintained for the duration of the runtime (hours)
         memory (int): sge virtual memory
         slots (int): sge number of cores
         port (int): port to forward, if port is in use script will fail
@@ -47,12 +47,12 @@ class JupyterInstance:
         self.confirm_user: line parsing definition to return True when username given
         """
 
-    def __init__(self, username=None, time=None, memory=None,
+    def __init__(self, username=None, cluster_time=None, memory=None,
                  slots=None, port=None, directory=None,
                  sge_modules=None, cluster_address=None):
         assert (isinstance(sge_modules, list))
         self.username = username
-        self.time = time
+        self.time = cluster_time
         self.memory = memory
         self.slots = slots
         self.port = port
@@ -77,12 +77,13 @@ class JupyterInstance:
 
     def open_connection(self):
         self.ssh_connection = subprocess.Popen(
-            ['ssh', '-t', '-t', '-4', '%s@%s' % (self.username, self.cluster_address)],
+            ['screen', 'ssh', '-t', '-4', '%s@%s' % (self.username, self.cluster_address)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True)
-        self.read_to_key(self.ssh_connection.stdout, lambda line: line.split(' ')[0] == 'Welcome' or line.split(' ')[0] == 'Last')
+        self.read_to_key(self.ssh_connection.stdout,
+                         lambda line: line.split(' ')[0] == 'Welcome' or line.split(' ')[0] == 'Last')
         print('Successfully opened connection')
 
     def check_user(self):
@@ -116,9 +117,9 @@ class JupyterInstance:
         self.ssh_connection.stdin.flush()
 
     def launch_jupyter(self):
-        self.ssh_connection.stdin.write('jupyter notebook --port=%s --no-browser\n' % self.port)
+        self.ssh_connection.stdin.write('jupyter lab --port=%s --no-browser\n' % self.port)
         self.ssh_connection.stdin.flush()
-        self.read_to_key(self.ssh_connection.stdout, lambda line: 'NotebookApp' in line)
+        self.read_to_key(self.ssh_connection.stdout, lambda line: 'LabApp' in line)
 
     def ssh_tunnel(self):
         tunnel = ['ssh', '-4', '-t', '-Y', '%s@%s' % (self.username, self.cluster_address), '-L',
@@ -134,14 +135,14 @@ class JupyterInstance:
 
     def maintain_connection(self):
         start = time.time()
-        message = False
+        print('Maintaining Connection for %s hours' % str(round(self.time)))
         while True:
-            if not message:
-                if time.time() - start > 60:
-                    print('Maintaining Connection for %s hours' % str(round(self.time)))
-                    break
-        time.sleep(self.time * 3600)
-        self.ssh_connection.kill()
+            if time.time() - start > self.time * 3600:
+                break
+            else:
+                line = self.ssh_connection.stdout.readline()
+                self.monitor_connection(line)
+                time.sleep(10)
         self.ptunnel.kill()
 
     @staticmethod
@@ -162,13 +163,18 @@ class JupyterInstance:
         if line.replace('\n', '') == self.username:
             return True
 
+    def monitor_connection(self, line):
+        if line.replace('\n', '') == '[detached]':
+            self.ssh_connection.stdin.write('screen -r\n')
+            self.ssh_connection.stdin.flush()
+
 
 if __name__ == '__main__':
     arguments = parser.parse_args()
     jupyter = JupyterInstance(username=arguments.u,
                               cluster_address=arguments.c,
                               sge_modules=arguments.M,
-                              time=arguments.t,
+                              cluster_time=arguments.t,
                               memory=arguments.m,
                               slots=arguments.s,
                               port=arguments.p,
