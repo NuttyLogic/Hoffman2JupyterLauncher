@@ -147,8 +147,8 @@ class JupyterInstance:
     def read_to_key(stream, func):
         while True:
             line = stream.readline()
-            print(line)
             if line:
+                print(line)
                 if func(line):
                     break
 
