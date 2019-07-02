@@ -15,7 +15,7 @@ parser.add_argument('-p', type=int, default=8790, help='Port to output dictionar
                                                        'if port is unavailable script will fail')
 parser.add_argument('-d', type=str, default='$HOME', help='hoffman2 directory to initialize jupyter ')
 parser.add_argument('-c', type=str, default='hoffman2.idre.ucla.edu', help='path to SGE cluster')
-parser.add_argument('-M', type=str, default=['python/3.7.2', 'samtools', 'bedtools'], action='append',
+parser.add_argument('-M', type=str, default=['python/3.7.2'], action='append',
                     help='-M for each module you want to load')
 
 
